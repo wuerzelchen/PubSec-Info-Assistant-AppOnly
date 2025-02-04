@@ -20,9 +20,7 @@ secrets="{"
 keyVaultName=$(cat inf_output.json | jq -r .AZURE_KEYVAULT_NAME.value)
 
 # Names of your secrets
-secretNames=("AZURE-AI-KEY" "AZURE-STORAGE-CONNECTION-STRING")
-azWebJobSecretName="AZURE-STORAGE-CONNECTION-STRING"
-azWebJobVarName="AzureWebJobsStorage"
+secretNames=("AZURE-AI-KEY")
 
 # Retrieve and export each secret
 for secretName in "${secretNames[@]}"; do
@@ -42,22 +40,6 @@ secrets="${secrets%,}"
 jq -r --arg secrets "$secrets" '
     [
         {
-            "path": "AZURE_STORAGE_ACCOUNT",
-            "env_var": "BLOB_STORAGE_ACCOUNT"
-        },
-        {
-            "path": "AZURE_BLOB_DROP_STORAGE_CONTAINER",
-            "env_var": "BLOB_STORAGE_ACCOUNT_UPLOAD_CONTAINER_NAME"
-        },
-        {
-            "path": "AZURE_STORAGE_CONTAINER",
-            "env_var": "BLOB_STORAGE_ACCOUNT_OUTPUT_CONTAINER_NAME"
-        },
-        {
-            "path": "AZURE_BLOB_LOG_STORAGE_CONTAINER",
-            "env_var": "BLOB_STORAGE_ACCOUNT_LOG_CONTAINER_NAME"
-        },
-        {
             "path": "CHUNK_TARGET_SIZE",
             "env_var": "CHUNK_TARGET_SIZE"
         },
@@ -70,36 +52,8 @@ jq -r --arg secrets "$secrets" '
             "env_var": "TARGET_PAGES"
         },
         {
-            "path": "AZURE_FORM_RECOGNIZER_ENDPOINT",
-            "env_var": "AZURE_FORM_RECOGNIZER_ENDPOINT"
-        },
-        {
-            "path": "AZURE_COSMOSDB_URL",
-            "env_var": "COSMOSDB_URL"
-        },
-        {
-            "path": "AZURE_COSMOSDB_LOG_DATABASE_NAME",
-            "env_var": "COSMOSDB_LOG_DATABASE_NAME"
-        },
-        {
-            "path": "AZURE_COSMOSDB_LOG_CONTAINER_NAME",
-            "env_var": "COSMOSDB_LOG_CONTAINER_NAME"
-        },
-        {
-            "path": "FUNC_STORAGE_CONNECTION_STRING__queueServiceUri",
-            "env_var": "AzureStorageConnection1__queueServiceUri"
-        },
-        {
-            "path": "FUNC_STORAGE_CONNECTION_STRING__blobServiceUri",
-            "env_var": "AzureStorageConnection1__blobServiceUri"
-        },
-        {
             "path": "AZURE_AI_ENDPOINT",
             "env_var": "AZURE_AI_ENDPOINT"
-        },
-        {
-            "path": "ENRICHMENT_NAME",
-            "env_var": "ENRICHMENT_NAME"
         },
         {
             "path": "TARGET_TRANSLATION_LANGUAGE",
@@ -120,14 +74,6 @@ jq -r --arg secrets "$secrets" '
         {
             "path": "AZURE_LOCATION",
             "env_var": "AZURE_AI_LOCATION"
-        },
-        {
-            "path": "AZURE_SEARCH_INDEX",
-            "env_var": "AZURE_SEARCH_INDEX"
-        },
-        {
-            "path": "AZURE_SEARCH_SERVICE_ENDPOINT",
-            "env_var": "AZURE_SEARCH_SERVICE_ENDPOINT"
         },
         {
             "path": "AZURE_AI_LOCATION",

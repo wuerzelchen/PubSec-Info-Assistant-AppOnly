@@ -18,12 +18,5 @@ sudo docker tag webapp webapp:$tag
 echo -n "$tag" > ./container_images/webapp_container_image/image_tag.txt
 echo -e "\n"
 
-# Export docker image to the artifacts folder
-echo "Exporting docker image to artifacts folder"
-echo -e "\n"
-rm -rf ./artifacts/webapp
-mkdir -p ./artifacts/webapp
-skopeo copy docker-daemon:webapp:$tag oci:./artifacts/webapp
-
 echo "Build and tagging complete. Tag: $tag"
 echo -e "\n"

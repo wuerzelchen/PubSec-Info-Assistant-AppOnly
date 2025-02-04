@@ -25,29 +25,10 @@ from azure.identity import ManagedIdentityCredential, AzureAuthorityHosts, Defau
 from azure.mgmt.cognitiveservices import CognitiveServicesManagementClient
 from azure.search.documents import SearchClient
 from azure.storage.blob import BlobServiceClient, ContentSettings
-from approaches.mathassistant import(
-    generate_response,
-    process_agent_response,
-    stream_agent_responses
-)
-from approaches.tabulardataassistant import (
-    refreshagent,
-    save_df,
-    process_agent_response as td_agent_response,
-    process_agent_scratch_pad as td_agent_scratch_pad,
-    get_images_in_temp
-)
-from shared_code.status_log import State, StatusClassification, StatusLog
-from azure.cosmos import CosmosClient
-
 
 # === ENV Setup ===
 
 ENV = {
-    "AZURE_BLOB_STORAGE_ACCOUNT": None,
-    "AZURE_BLOB_STORAGE_ENDPOINT": None,
-    "AZURE_BLOB_STORAGE_CONTAINER": "content",
-    "AZURE_BLOB_STORAGE_UPLOAD_CONTAINER": "upload",
     "AZURE_SEARCH_SERVICE": "gptkb",
     "AZURE_SEARCH_SERVICE_ENDPOINT": None,
     "AZURE_SEARCH_INDEX": "gptkbindex",
@@ -72,9 +53,6 @@ ENV = {
     "KB_FIELDS_PAGENUMBER": "pages",
     "KB_FIELDS_SOURCEFILE": "file_name",
     "KB_FIELDS_CHUNKFILE": "chunk_file",
-    "COSMOSDB_URL": None,
-    "COSMOSDB_LOG_DATABASE_NAME": "statusdb",
-    "COSMOSDB_LOG_CONTAINER_NAME": "statuscontainer",
     "QUERY_TERM_LANGUAGE": "English",
     "TARGET_EMBEDDINGS_MODEL": "BAAI/bge-small-en-v1.5",
     "ENRICHMENT_APPSERVICE_URL": "enrichment",
@@ -86,12 +64,11 @@ ENV = {
     "ENABLE_BING_SAFE_SEARCH": "true",
     "ENABLE_WEB_CHAT": "false",
     "ENABLE_UNGROUNDED_CHAT": "false",
-    "ENABLE_MATH_ASSISTANT": "false",
-    "ENABLE_TABULAR_DATA_ASSISTANT": "false",
-    "MAX_CSV_FILE_SIZE": "7",
     "LOCAL_DEBUG": "false",
-    "AZURE_AI_CREDENTIAL_DOMAIN": "cognitiveservices.azure.com"
-    }
+    "AZURE_AI_CREDENTIAL_DOMAIN": "cognitiveservices.azure.com",
+    "AZURE_BLOB_STORAGE_ENDPOINT": None,
+    "AZURE_BLOB_STORAGE_CONTAINER": "files",
+}
 
 for key, value in ENV.items():
     new_value = os.getenv(key)
@@ -106,11 +83,13 @@ log = logging.getLogger("uvicorn")
 log.setLevel('DEBUG')
 log.propagate = True
 
+
 class StatusResponse(pydantic.BaseModel):
     """The response model for the health check endpoint"""
     status: str
     uptime_seconds: float
     version: str
+
 
 start_time = datetime.now()
 
@@ -140,31 +119,21 @@ openai.api_type = "azure_ad"
 token_provider = get_bearer_token_provider(azure_credential,
                                            f'https://{ENV["AZURE_AI_CREDENTIAL_DOMAIN"]}/.default')
 openai.azure_ad_token_provider = token_provider
-#openai.api_key = ENV["AZURE_OPENAI_SERVICE_KEY"]
-
-# Setup StatusLog to allow access to CosmosDB for logging
-statusLog = StatusLog(
-    ENV["COSMOSDB_URL"],
-    azure_credential,
-    ENV["COSMOSDB_LOG_DATABASE_NAME"],
-    ENV["COSMOSDB_LOG_CONTAINER_NAME"]
-)
+# openai.api_key = ENV["AZURE_OPENAI_SERVICE_KEY"]
 
 # Set up clients for Cognitive Search and Storage
 search_client = SearchClient(
     endpoint=ENV["AZURE_SEARCH_SERVICE_ENDPOINT"],
     index_name=ENV["AZURE_SEARCH_INDEX"],
-    credential=azure_credential,
-    audience=ENV["AZURE_SEARCH_AUDIENCE"]
+    credential=azure_credential
+    # audience=ENV["AZURE_SEARCH_AUDIENCE"]
 )
-
 blob_client = BlobServiceClient(
     account_url=ENV["AZURE_BLOB_STORAGE_ENDPOINT"],
     credential=azure_credential,
 )
-blob_container = blob_client.get_container_client(ENV["AZURE_BLOB_STORAGE_CONTAINER"])
-blob_upload_container_client = blob_client.get_container_client(
-                                    os.environ["AZURE_BLOB_STORAGE_UPLOAD_CONTAINER"])
+blob_container = blob_client.get_container_client(
+    ENV["AZURE_BLOB_STORAGE_CONTAINER"])
 
 MODEL_NAME = ''
 MODEL_VERSION = ''
@@ -198,74 +167,74 @@ else:
 
 chat_approaches = {
     Approaches.ReadRetrieveRead: ChatReadRetrieveReadApproach(
-                                    search_client,
-                                    ENV["AZURE_OPENAI_ENDPOINT"],
-                                    ENV["AZURE_OPENAI_CHATGPT_DEPLOYMENT"],
-                                    ENV["KB_FIELDS_SOURCEFILE"],
-                                    ENV["KB_FIELDS_CONTENT"],
-                                    ENV["KB_FIELDS_PAGENUMBER"],
-                                    ENV["KB_FIELDS_CHUNKFILE"],
-                                    ENV["AZURE_BLOB_STORAGE_CONTAINER"],
-                                    blob_client,
-                                    ENV["QUERY_TERM_LANGUAGE"],
-                                    MODEL_NAME,
-                                    MODEL_VERSION,
-                                    ENV["TARGET_EMBEDDINGS_MODEL"],
-                                    ENV["ENRICHMENT_APPSERVICE_URL"],
-                                    ENV["TARGET_TRANSLATION_LANGUAGE"],
-                                    ENV["AZURE_AI_ENDPOINT"],
-                                    ENV["AZURE_AI_LOCATION"],
-                                    token_provider,
-                                    str_to_bool.get(ENV["USE_SEMANTIC_RERANKER"])
-                                ),
+        search_client,
+        ENV["AZURE_OPENAI_ENDPOINT"],
+        ENV["AZURE_OPENAI_CHATGPT_DEPLOYMENT"],
+        ENV["KB_FIELDS_SOURCEFILE"],
+        ENV["KB_FIELDS_CONTENT"],
+        ENV["KB_FIELDS_PAGENUMBER"],
+        ENV["KB_FIELDS_CHUNKFILE"],
+        ENV["AZURE_BLOB_STORAGE_CONTAINER"],
+        blob_client,
+        ENV["QUERY_TERM_LANGUAGE"],
+        MODEL_NAME,
+        MODEL_VERSION,
+        ENV["TARGET_EMBEDDINGS_MODEL"],
+        ENV["ENRICHMENT_APPSERVICE_URL"],
+        ENV["TARGET_TRANSLATION_LANGUAGE"],
+        ENV["AZURE_AI_ENDPOINT"],
+        ENV["AZURE_AI_LOCATION"],
+        token_provider,
+        str_to_bool.get(ENV["USE_SEMANTIC_RERANKER"])
+    ),
     Approaches.ChatWebRetrieveRead: ChatWebRetrieveRead(
-                                    MODEL_NAME,
-                                    ENV["AZURE_OPENAI_CHATGPT_DEPLOYMENT"],
-                                    ENV["TARGET_TRANSLATION_LANGUAGE"],
-                                    ENV["BING_SEARCH_ENDPOINT"],
-                                    ENV["BING_SEARCH_KEY"],
-                                    str_to_bool.get(ENV["ENABLE_BING_SAFE_SEARCH"]),
-                                    ENV["AZURE_OPENAI_ENDPOINT"],
-                                    token_provider
-                                ),
+        MODEL_NAME,
+        ENV["AZURE_OPENAI_CHATGPT_DEPLOYMENT"],
+        ENV["TARGET_TRANSLATION_LANGUAGE"],
+        ENV["BING_SEARCH_ENDPOINT"],
+        ENV["BING_SEARCH_KEY"],
+        str_to_bool.get(ENV["ENABLE_BING_SAFE_SEARCH"]),
+        ENV["AZURE_OPENAI_ENDPOINT"],
+        token_provider
+    ),
     Approaches.CompareWorkWithWeb: CompareWorkWithWeb(
-                                    MODEL_NAME,
-                                    ENV["AZURE_OPENAI_CHATGPT_DEPLOYMENT"],
-                                    ENV["TARGET_TRANSLATION_LANGUAGE"],
-                                    ENV["BING_SEARCH_ENDPOINT"],
-                                    ENV["BING_SEARCH_KEY"],
-                                    str_to_bool.get(ENV["ENABLE_BING_SAFE_SEARCH"]),
-                                    ENV["AZURE_OPENAI_ENDPOINT"],
-                                    token_provider
-                                ),
+        MODEL_NAME,
+        ENV["AZURE_OPENAI_CHATGPT_DEPLOYMENT"],
+        ENV["TARGET_TRANSLATION_LANGUAGE"],
+        ENV["BING_SEARCH_ENDPOINT"],
+        ENV["BING_SEARCH_KEY"],
+        str_to_bool.get(ENV["ENABLE_BING_SAFE_SEARCH"]),
+        ENV["AZURE_OPENAI_ENDPOINT"],
+        token_provider
+    ),
     Approaches.CompareWebWithWork: CompareWebWithWork(
-                                    search_client,
-                                    ENV["AZURE_OPENAI_ENDPOINT"],
-                                    ENV["AZURE_OPENAI_CHATGPT_DEPLOYMENT"],
-                                    ENV["KB_FIELDS_SOURCEFILE"],
-                                    ENV["KB_FIELDS_CONTENT"],
-                                    ENV["KB_FIELDS_PAGENUMBER"],
-                                    ENV["KB_FIELDS_CHUNKFILE"],
-                                    ENV["AZURE_BLOB_STORAGE_CONTAINER"],
-                                    blob_client,
-                                    ENV["QUERY_TERM_LANGUAGE"],
-                                    MODEL_NAME,
-                                    MODEL_VERSION,
-                                    ENV["TARGET_EMBEDDINGS_MODEL"],
-                                    ENV["ENRICHMENT_APPSERVICE_URL"],
-                                    ENV["TARGET_TRANSLATION_LANGUAGE"],
-                                    ENV["AZURE_AI_ENDPOINT"],
-                                    ENV["AZURE_AI_LOCATION"],
-                                    token_provider,
-                                    str_to_bool.get(ENV["USE_SEMANTIC_RERANKER"])
-                                ),
+        search_client,
+        ENV["AZURE_OPENAI_ENDPOINT"],
+        ENV["AZURE_OPENAI_CHATGPT_DEPLOYMENT"],
+        ENV["KB_FIELDS_SOURCEFILE"],
+        ENV["KB_FIELDS_CONTENT"],
+        ENV["KB_FIELDS_PAGENUMBER"],
+        ENV["KB_FIELDS_CHUNKFILE"],
+        ENV["AZURE_BLOB_STORAGE_CONTAINER"],
+        blob_client,
+        ENV["QUERY_TERM_LANGUAGE"],
+        MODEL_NAME,
+        MODEL_VERSION,
+        ENV["TARGET_EMBEDDINGS_MODEL"],
+        ENV["ENRICHMENT_APPSERVICE_URL"],
+        ENV["TARGET_TRANSLATION_LANGUAGE"],
+        ENV["AZURE_AI_ENDPOINT"],
+        ENV["AZURE_AI_LOCATION"],
+        token_provider,
+        str_to_bool.get(ENV["USE_SEMANTIC_RERANKER"])
+    ),
     Approaches.GPTDirect: GPTDirectApproach(
-                                token_provider,
-                                ENV["AZURE_OPENAI_CHATGPT_DEPLOYMENT"],
-                                ENV["QUERY_TERM_LANGUAGE"],
-                                MODEL_NAME,
-                                MODEL_VERSION,
-                                ENV["AZURE_OPENAI_ENDPOINT"]
+        token_provider,
+        ENV["AZURE_OPENAI_CHATGPT_DEPLOYMENT"],
+        ENV["QUERY_TERM_LANGUAGE"],
+        MODEL_NAME,
+        MODEL_VERSION,
+        ENV["AZURE_OPENAI_ENDPOINT"]
     )
 }
 
@@ -279,10 +248,12 @@ app = FastAPI(
     docs_url="/docs",
 )
 
+
 @app.get("/", include_in_schema=False, response_class=RedirectResponse)
 async def root():
     """Redirect to the index.html page"""
     return RedirectResponse(url="/index.html")
+
 
 @app.get("/health", response_model=StatusResponse, tags=["health"])
 def health():
@@ -295,7 +266,8 @@ def health():
     uptime = datetime.now() - start_time
     uptime_seconds = uptime.total_seconds()
 
-    output = {"status": None, "uptime_seconds": uptime_seconds, "version": app.version}
+    output = {"status": None, "uptime_seconds": uptime_seconds,
+              "version": app.version}
 
     if IS_READY:
         output["status"] = "ready"
@@ -303,6 +275,7 @@ def health():
         output["status"] = "loading"
 
     return output
+
 
 @app.post("/chat")
 async def chat(request: Request):
@@ -323,9 +296,8 @@ async def chat(request: Request):
         impl = chat_approaches.get(Approaches(int(approach)))
         if not impl:
             return {"error": "unknown approach"}, 400
-
         if (Approaches(int(approach)) == Approaches.CompareWorkWithWeb or
-            Approaches(int(approach)) == Approaches.CompareWebWithWork):
+                Approaches(int(approach)) == Approaches.CompareWebWithWork):
             r = impl.run(json_body.get("history", []),
                          json_body.get("overrides", {}),
                          json_body.get("citation_lookup", {}),
@@ -342,53 +314,6 @@ async def chat(request: Request):
         log.error("Error in chat:: %s", ex)
         raise HTTPException(status_code=500, detail=str(ex)) from ex
 
-@app.post("/getalluploadstatus")
-async def get_all_upload_status(request: Request):
-    """
-    Get the status and tags of all file uploads in the last N hours.
-
-    Parameters:
-    - request: The HTTP request object.
-
-    Returns:
-    - results: The status of all file uploads in the specified timeframe.
-    """
-    json_body = await request.json()
-    timeframe = json_body.get("timeframe")
-    state = json_body.get("state")
-    folder = json_body.get("folder")
-    tag = json_body.get("tag")
-    try:
-        results = statusLog.read_files_status_by_timeframe(timeframe,
-            State[state],
-            folder,
-            tag,
-            os.environ["AZURE_BLOB_STORAGE_UPLOAD_CONTAINER"])
-
-        # retrieve tags for each file
-         # Initialize an empty list to hold the tags
-        items = []
-        cosmos_client = CosmosClient(url=statusLog._url,
-                                     credential=azure_credential,
-                                     consistency_level='Session')
-        database = cosmos_client.get_database_client(statusLog._database_name)
-        container = database.get_container_client(statusLog._container_name)
-        query_string = "SELECT DISTINCT VALUE t FROM c JOIN t IN c.tags"
-        items = list(container.query_items(
-            query=query_string,
-            enable_cross_partition_query=True
-        ))
-
-        # Extract and split tags
-        unique_tags = set()
-        for item in items:
-            tags = item.split(',')
-            unique_tags.update(tags)
-
-    except Exception as ex:
-        log.exception("Exception in /getalluploadstatus")
-        raise HTTPException(status_code=500, detail=str(ex)) from ex
-    return results
 
 @app.post("/getfolders")
 async def get_folders():
@@ -402,7 +327,6 @@ async def get_folders():
     - results: list of unique folders.
     """
     try:
-        blob_container = blob_client.get_container_client(os.environ["AZURE_BLOB_STORAGE_UPLOAD_CONTAINER"])
         # Initialize an empty list to hold the folder paths
         folders = []
         # List all blobs in the container
@@ -418,145 +342,6 @@ async def get_folders():
         raise HTTPException(status_code=500, detail=str(ex)) from ex
     return folders
 
-
-@app.post("/deleteItems")
-async def delete_Items(request: Request):
-    """
-    Delete a blob.
-
-    Parameters:
-    - request: The HTTP request object.
-
-    Returns:
-    - results: list of unique folders.
-    """
-    json_body = await request.json()
-    full_path = json_body.get("path")
-    # remove the container prefix
-    path = full_path.split("/", 1)[1]
-    try:
-        blob_container = blob_client.get_container_client(os.environ["AZURE_BLOB_STORAGE_UPLOAD_CONTAINER"])
-        blob_container.delete_blob(path)
-        statusLog.upsert_document(document_path=full_path,
-            status='Delete intiated',
-            status_classification=StatusClassification.INFO,
-            state=State.DELETING,
-            fresh_start=False)
-        statusLog.save_document(document_path=full_path)   
-
-    except Exception as ex:
-        log.exception("Exception in /delete_Items")
-        raise HTTPException(status_code=500, detail=str(ex)) from ex
-    return True
-
-
-@app.post("/resubmitItems")
-async def resubmit_Items(request: Request):
-    """
-    Resubmit a blob.
-
-    Parameters:
-    - request: The HTTP request object.
-
-    Returns:
-    - results: list of unique folders.
-    """
-    json_body = await request.json()
-    path = json_body.get("path")
-    # remove the container prefix
-    path = path.split("/", 1)[1]
-    try:
-        blob_container = blob_client.get_container_client(os.environ["AZURE_BLOB_STORAGE_UPLOAD_CONTAINER"])
-        # Read the blob content into memory
-        blob_data = blob_container.download_blob(path).readall()
-        
-        submitted_blob_client = blob_container.get_blob_client(blob=path)
-        blob_properties = submitted_blob_client.get_blob_properties()
-        metadata = blob_properties.metadata
-        blob_container.upload_blob(name=path, data=blob_data, overwrite=True, metadata=metadata)   
-       
-        
-        
-
-        # add the container to the path to avoid adding another doc in the status db
-        full_path = os.environ["AZURE_BLOB_STORAGE_UPLOAD_CONTAINER"] + '/' + path
-        statusLog.upsert_document(document_path=full_path,
-                    status='Resubmitted to the processing pipeline',
-                    status_classification=StatusClassification.INFO,
-                    state=State.QUEUED,
-                    fresh_start=False)
-        statusLog.save_document(document_path=full_path)   
-
-    except Exception as ex:
-        log.exception("Exception in /resubmitItems")
-        raise HTTPException(status_code=500, detail=str(ex)) from ex
-    return True
-
-
-@app.post("/gettags")
-async def get_tags(request: Request):
-    """
-    Get all tags.
-
-    Parameters:
-    - request: The HTTP request object.
-
-    Returns:
-    - results: list of unique tags.
-    """
-    try:
-        # Initialize an empty list to hold the tags
-        items = []              
-        cosmos_client = CosmosClient(url=statusLog._url, credential=azure_credential, consistency_level='Session')     
-        database = cosmos_client.get_database_client(statusLog._database_name)               
-        container = database.get_container_client(statusLog._container_name) 
-        query_string = "SELECT DISTINCT VALUE t FROM c JOIN t IN c.tags"  
-        items = list(container.query_items(
-            query=query_string,
-            enable_cross_partition_query=True
-        ))           
-
-        # Extract and split tags
-        unique_tags = set()
-        for item in items:
-            tags = item.split(',')
-            unique_tags.update(tags)                  
-                
-    except Exception as ex:
-        log.exception("Exception in /gettags")
-        raise HTTPException(status_code=500, detail=str(ex)) from ex
-    return unique_tags
-
-@app.post("/logstatus")
-async def logstatus(request: Request):
-    """
-    Log the status of a file upload to CosmosDB.
-
-    Parameters:
-    - request: Request object containing the HTTP request data.
-
-    Returns:
-    - A dictionary with the status code 200 if successful, or an error
-        message with status code 500 if an exception occurs.
-    """
-    try:
-        json_body = await request.json()
-        path = json_body.get("path")
-        status = json_body.get("status")
-        status_classification = StatusClassification[json_body.get("status_classification").upper()]
-        state = State[json_body.get("state").upper()]
-
-        statusLog.upsert_document(document_path=path,
-                                  status=status,
-                                  status_classification=status_classification,
-                                  state=state,
-                                  fresh_start=True)
-        statusLog.save_document(document_path=path)
-
-    except Exception as ex:
-        log.exception("Exception in /logstatus")
-        raise HTTPException(status_code=500, detail=str(ex)) from ex
-    raise HTTPException(status_code=200, detail="Success")
 
 @app.get("/getInfoData")
 async def get_info_data():
@@ -596,18 +381,20 @@ async def get_info_data():
 @app.get("/getWarningBanner")
 async def get_warning_banner():
     """Get the warning banner text"""
-    response ={
-            "WARNING_BANNER_TEXT": ENV["CHAT_WARNING_BANNER_TEXT"]
-        }
+    response = {
+        "WARNING_BANNER_TEXT": ENV["CHAT_WARNING_BANNER_TEXT"]
+    }
     return response
+
 
 @app.get("/getMaxCSVFileSize")
 async def get_max_csv_file_size():
     """Get the max csv size"""
-    response ={
-            "MAX_CSV_FILE_SIZE": ENV["MAX_CSV_FILE_SIZE"]
-        }
+    response = {
+        "MAX_CSV_FILE_SIZE": ENV["MAX_CSV_FILE_SIZE"]
+    }
     return response
+
 
 @app.post("/getcitation")
 async def get_citation(request: Request):
@@ -622,7 +409,7 @@ async def get_citation(request: Request):
     """
     try:
         json_body = await request.json()
-        citation = urllib.parse.unquote(json_body.get("citation"))    
+        citation = urllib.parse.unquote(json_body.get("citation"))
         blob = blob_container.get_blob_client(citation).download_blob()
         decoded_text = blob.readall().decode()
         results = json.loads(decoded_text)
@@ -632,200 +419,19 @@ async def get_citation(request: Request):
     return results
 
 # Return APPLICATION_TITLE
+
+
 @app.get("/getApplicationTitle")
 async def get_application_title():
     """Get the application title text
-    
+
     Returns:
         dict: A dictionary containing the application title.
     """
     response = {
-            "APPLICATION_TITLE": ENV["APPLICATION_TITLE"]
-        }
+        "APPLICATION_TITLE": ENV["APPLICATION_TITLE"]
+    }
     return response
-
-@app.get("/getalltags")
-async def get_all_tags():
-    """
-    Get the status of all tags in the system
-
-    Returns:
-        dict: A dictionary containing the status of all tags
-    """
-    try:
-        results = statusLog.get_all_tags()
-    except Exception as ex:
-        log.exception("Exception in /getalltags")
-        raise HTTPException(status_code=500, detail=str(ex)) from ex
-    return results
-
-@app.get("/getTempImages")
-async def get_temp_images():
-    """Get the images in the temp directory
-
-    Returns:
-        list: A list of image data in the temp directory.
-    """
-    images = get_images_in_temp()
-    return {"images": images}
-
-@app.get("/getHint")
-async def getHint(question: Optional[str] = None):
-    """
-    Get the hint for a question
-
-    Returns:
-        str: A string containing the hint
-    """
-    if question is None:
-        raise HTTPException(status_code=400, detail="Question is required")
-
-    try:
-        results = generate_response(question).split("Clues")[1][2:]
-    except Exception as ex:
-        log.exception("Exception in /getHint")
-        raise HTTPException(status_code=500, detail=str(ex)) from ex
-    return results
-
-@app.post("/posttd")
-async def posttd(csv: UploadFile = File(...)):
-    try:
-        global DF_FINAL
-            # Read the file into a pandas DataFrame
-        content = await csv.read()
-        df = pd.read_csv(StringIO(content.decode('utf-8-sig')))
-
-        DF_FINAL = df
-        # Process the DataFrame...
-        save_df(df)
-    except Exception as ex:
-        raise HTTPException(status_code=500, detail=str(ex)) from ex
-    
-    
-    #return {"filename": csv.filename}
-@app.get("/process_td_agent_response")
-async def process_td_agent_response(retries=3, delay=1000, question: Optional[str] = None):
-    save_df(DF_FINAL)
-    if question is None:
-        raise HTTPException(status_code=400, detail="Question is required")
-    for i in range(retries):
-        try:
-            results = td_agent_response(question,DF_FINAL)
-            return results
-        except AttributeError as ex:
-            log.exception(f"Exception in /process_tabular_data_agent_response:{str(ex)}")
-            if i < retries - 1:  # i is zero indexed
-                await asyncio.sleep(delay)  # wait a bit before trying again
-            else:
-                if str(ex) == "'NoneType' object has no attribute 'stream'":
-                    return ["error: Csv has not been loaded"]
-                else:
-                    raise HTTPException(status_code=500, detail=str(ex)) from ex
-        except Exception as ex:
-            log.exception(f"Exception in /process_tabular_data_agent_response:{str(ex)}")
-            if i < retries - 1:  # i is zero indexed
-                await asyncio.sleep(delay)  # wait a bit before trying again
-            else:
-                raise HTTPException(status_code=500, detail=str(ex)) from ex
-
-@app.get("/getTdAnalysis")
-async def getTdAnalysis(retries=3, delay=1, question: Optional[str] = None):
-    global DF_FINAL
-    if question is None:
-        raise HTTPException(status_code=400, detail="Question is required")
-        
-    for i in range(retries):
-        try:
-            save_df(DF_FINAL)
-            results = td_agent_scratch_pad(question, DF_FINAL)
-            return results
-        except AttributeError as ex:
-            log.exception(f"Exception in /getTdAnalysis:{str(ex)}")
-            if i < retries - 1:  # i is zero indexed
-                await asyncio.sleep(delay)  # wait a bit before trying again
-            else:
-                if str(ex) == "'NoneType' object has no attribute 'stream'":
-                    return ["error: Csv has not been loaded"]
-                else:
-                    raise HTTPException(status_code=500, detail=str(ex)) from ex
-        except Exception as ex:
-            log.exception(f"Exception in /getTdAnalysis:{str(ex)}")
-            if i < retries - 1:  # i is zero indexed
-                await asyncio.sleep(delay)  # wait a bit before trying again
-            else:
-                raise HTTPException(status_code=500, detail=str(ex)) from ex
-
-@app.post("/refresh")
-async def refresh():
-    """
-    Refresh the agent's state.
-
-    This endpoint calls the `refresh` function to reset the agent's state.
-
-    Raises:
-        HTTPException: If an error occurs while refreshing the agent's state.
-
-    Returns:
-        dict: A dictionary containing the status of the agent's state.
-    """
-    try:
-        refreshagent()
-    except Exception as ex:
-        log.exception("Exception in /refresh")
-        raise HTTPException(status_code=500, detail=str(ex)) from ex
-    return {"status": "success"}
-
-
-@app.get("/stream")
-async def stream_response(question: str):
-    try:
-        stream = stream_agent_responses(question)
-        return StreamingResponse(stream, media_type="text/event-stream")
-    except Exception as ex:
-        log.exception("Exception in /stream")
-        raise HTTPException(status_code=500, detail=str(ex)) from ex
-
-@app.get("/tdstream")
-async def td_stream_response(question: str):
-    save_df(DF_FINAL)
-    
-
-    try:
-        stream = td_agent_scratch_pad(question, DF_FINAL)
-        return StreamingResponse(stream, media_type="text/event-stream")
-    except Exception as ex:
-        log.exception("Exception in /stream")
-        raise HTTPException(status_code=500, detail=str(ex)) from ex
-
-
-
-
-@app.get("/process_agent_response")
-async def stream_agent_response(question: str):
-    """
-    Stream the response of the agent for a given question.
-
-    This endpoint uses Server-Sent Events (SSE) to stream the response of the agent. 
-    It calls the `process_agent_response` function which yields chunks of data as they become available.
-
-    Args:
-        question (str): The question to be processed by the agent.
-
-    Yields:
-        dict: A dictionary containing a chunk of the agent's response.
-
-    Raises:
-        HTTPException: If an error occurs while processing the question.
-    """
-    if question is None:
-        raise HTTPException(status_code=400, detail="Question is required")
-
-    try:
-        results = process_agent_response(question)
-    except Exception as e:
-        print(f"Error processing agent response: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
-    return results
 
 
 @app.get("/getFeatureFlags")
@@ -843,41 +449,9 @@ async def get_feature_flags():
     response = {
         "ENABLE_WEB_CHAT": str_to_bool.get(ENV["ENABLE_WEB_CHAT"]),
         "ENABLE_UNGROUNDED_CHAT": str_to_bool.get(ENV["ENABLE_UNGROUNDED_CHAT"]),
-        "ENABLE_MATH_ASSISTANT": str_to_bool.get(ENV["ENABLE_MATH_ASSISTANT"]),
-        "ENABLE_TABULAR_DATA_ASSISTANT": str_to_bool.get(ENV["ENABLE_TABULAR_DATA_ASSISTANT"]),
     }
     return response
 
-@app.post("/file")  
-async def upload_file(  
-    file: UploadFile = File(...),   
-    file_path: str = Form(...),
-    tags: str = Form(None)  
-):  
-    """  
-    Upload a file to Azure Blob Storage.  
-    Parameters:  
-    - file: The file to upload.
-    - file_path: The path to save the file in Blob Storage.
-    - tags: The tags to associate with the file.  
-    Returns:  
-    - response: A message indicating the result of the upload.  
-    """  
-    try:          
-        blob_upload_client = blob_upload_container_client.get_blob_client(file_path)  
-  
-        blob_upload_client.upload_blob(
-            file.file,
-            overwrite=True,
-            content_settings=ContentSettings(content_type=file.content_type),
-            metadata= {"tags": tags}
-        )
-  
-        return {"message": f"File '{file.filename}' uploaded successfully"}  
-  
-    except Exception as ex:  
-        log.exception("Exception in /file")  
-        raise HTTPException(status_code=500, detail=str(ex)) from ex  
 
 @app.post("/get-file")
 async def get_file(request: Request):
@@ -888,13 +462,13 @@ async def get_file(request: Request):
     container_name, blob_name = file_path.split('/', 1)
 
     # Download the blob to a local file
-    
-    citation_blob_client = blob_upload_container_client.get_blob_client(blob=blob_name)
+
+    citation_blob_client = blob_container.get_blob_client(blob=blob_name)
     stream = citation_blob_client.download_blob().chunks()
     blob_properties = citation_blob_client.get_blob_properties()
 
     return StreamingResponse(stream,
-                             media_type=blob_properties.content_settings.content_type, 
+                             media_type=blob_properties.content_settings.content_type,
                              headers={"Content-Disposition": f"inline; filename={blob_name}"})
 
 app.mount("/", StaticFiles(directory="static"), name="static")

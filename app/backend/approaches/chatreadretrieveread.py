@@ -9,11 +9,10 @@ from datetime import datetime, timedelta
 from typing import Any, Sequence
 
 import openai
-from openai import  AsyncAzureOpenAI
+from openai import AsyncAzureOpenAI
 from openai import BadRequestError
 from approaches.approach import Approach
-from azure.search.documents import SearchClient  
-from azure.search.documents.models import VectorizedQuery
+from azure.search.documents import SearchClient
 from azure.search.documents.models import QueryType
 from azure.storage.blob import (
     BlobSasPermissions,
@@ -22,15 +21,13 @@ from azure.storage.blob import (
 )
 from text import nonewlines
 from core.modelhelper import get_token_limit
-import requests
+
 
 class ChatReadRetrieveReadApproach(Approach):
     """Approach that uses a simple retrieve-then-read implementation, using the Azure AI Search and
     Azure OpenAI APIs directly. It first retrieves top documents from search,
     then constructs a prompt with them, and then uses Azure OpenAI to generate
     an completion (answer) with that prompt."""
-     
-
 
     SYSTEM_MESSAGE_CHAT_CONVERSATION = """You are an Azure OpenAI Completion system. Your persona is {systemPersona} who helps answer questions about an agency's data. {response_length_prompt}
     User persona is {userPersona} Answer ONLY with the facts listed in the list of sources below in {query_term_language} with citations.If there isn't enough information below, say you don't know and do not give citations. For tabular information return it as an html table. Do not return markdown format.
@@ -69,20 +66,24 @@ class ChatReadRetrieveReadApproach(Approach):
     """
 
     QUERY_PROMPT_FEW_SHOTS = [
-        {'role' : Approach.USER, 'content' : 'What are the future plans for public transportation development?' },
-        {'role' : Approach.ASSISTANT, 'content' : 'Future plans for public transportation' },
-        {'role' : Approach.USER, 'content' : 'how much renewable energy was generated last year?' },
-        {'role' : Approach.ASSISTANT, 'content' : 'Renewable energy generation last year' }
+        {'role': Approach.USER,
+            'content': 'What are the future plans for public transportation development?'},
+        {'role': Approach.ASSISTANT, 'content': 'Future plans for public transportation'},
+        {'role': Approach.USER,
+            'content': 'how much renewable energy was generated last year?'},
+        {'role': Approach.ASSISTANT, 'content': 'Renewable energy generation last year'}
     ]
 
     RESPONSE_PROMPT_FEW_SHOTS = [
-        {"role": Approach.USER ,'content': 'I am looking for information in source documents'},
+        {"role": Approach.USER,
+            'content': 'I am looking for information in source documents'},
         {'role': Approach.ASSISTANT, 'content': 'user is looking for information in source documents. Do not provide answers that are not in the source documents'},
-        {'role': Approach.USER, 'content': 'What steps are being taken to promote energy conservation?'},
-        {'role': Approach.ASSISTANT, 'content': 'Several steps are being taken to promote energy conservation including reducing energy consumption, increasing energy efficiency, and increasing the use of renewable energy sources.Citations[File0]'}
+        {'role': Approach.USER,
+            'content': 'What steps are being taken to promote energy conservation?'},
+        {'role': Approach.ASSISTANT,
+            'content': 'Several steps are being taken to promote energy conservation including reducing energy consumption, increasing energy efficiency, and increasing the use of renewable energy sources.Citations[File0]'}
     ]
-    
-    
+
     def __init__(
         self,
         search_client: SearchClient,
@@ -100,9 +101,9 @@ class ChatReadRetrieveReadApproach(Approach):
         target_embedding_model: str,
         enrichment_appservice_uri: str,
         target_translation_language: str,
-        azure_ai_endpoint:str,
-        azure_ai_location:str,
-        azure_ai_token_provider:str,
+        azure_ai_endpoint: str,
+        azure_ai_location: str,
+        azure_ai_token_provider: str,
         use_semantic_reranker: bool
     ):
         self.search_client = search_client
@@ -115,33 +116,31 @@ class ChatReadRetrieveReadApproach(Approach):
         self.blob_client = blob_client
         self.query_term_language = query_term_language
         self.chatgpt_token_limit = get_token_limit(model_name)
-        #escape target embeddiong model name
-        self.escaped_target_model = re.sub(r'[^a-zA-Z0-9_\-.]', '_', target_embedding_model)
-        self.target_translation_language=target_translation_language
-        self.azure_ai_endpoint=azure_ai_endpoint
-        self.azure_ai_location=azure_ai_location
-        self.azure_ai_token_provider=azure_ai_token_provider
-        self.oai_endpoint=oai_endpoint
+        # escape target embeddiong model name
+        self.escaped_target_model = re.sub(
+            r'[^a-zA-Z0-9_\-.]', '_', target_embedding_model)
+        self.target_translation_language = target_translation_language
+        self.azure_ai_endpoint = azure_ai_endpoint
+        self.azure_ai_location = azure_ai_location
+        self.azure_ai_token_provider = azure_ai_token_provider
+        self.oai_endpoint = oai_endpoint
         self.embedding_service_url = enrichment_appservice_uri
-        self.use_semantic_reranker=use_semantic_reranker
-        
+        self.use_semantic_reranker = use_semantic_reranker
+
         openai.api_base = oai_endpoint
         openai.api_type = 'azure'
         openai.api_version = "2024-02-01"
-        
+
         self.client = AsyncAzureOpenAI(
-        azure_endpoint = openai.api_base,
-        azure_ad_token_provider=azure_ai_token_provider,
-        api_version=openai.api_version)
-               
+            azure_endpoint=openai.api_base,
+            azure_ad_token_provider=azure_ai_token_provider,
+            api_version=openai.api_version)
 
         self.model_name = model_name
         self.model_version = model_version
-        
-       
-      
-        
+
     # def run(self, history: list[dict], overrides: dict) -> any:
+
     async def run(self, history: Sequence[dict[str, str]], overrides: dict[str, Any], citation_lookup: dict[str, Any], thought_chain: dict[str, Any]) -> Any:
 
         log = logging.getLogger("uvicorn")
@@ -149,7 +148,8 @@ class ChatReadRetrieveReadApproach(Approach):
         log.propagate = True
 
         chat_completion = None
-        use_semantic_captions = True if overrides.get("semantic_captions") else False
+        use_semantic_captions = True if overrides.get(
+            "semantic_captions") else False
         top = overrides.get("top") or 3
         user_persona = overrides.get("user_persona", "")
         system_persona = overrides.get("system_persona", "")
@@ -160,16 +160,11 @@ class ChatReadRetrieveReadApproach(Approach):
         user_q = 'Generate search query for: ' + history[-1]["user"]
         thought_chain["work_query"] = user_q
 
-        # Detect the language of the user's question
-        detectedlanguage = self.detect_language(user_q)
+        user_question = user_q
 
-        if detectedlanguage != self.target_translation_language:
-            user_question = self.translate_response(user_q, self.target_translation_language)
-        else:
-            user_question = user_q
-
-        query_prompt=self.QUERY_PROMPT_TEMPLATE.format(query_term_language=self.query_term_language)
-
+        query_prompt = self.QUERY_PROMPT_TEMPLATE.format(
+            query_term_language=self.query_term_language)
+        log.debug(f"Get Message from History")
         # STEP 1: Generate an optimized keyword search query based on the chat history and the last question
         messages = self.get_messages_from_history(
             query_prompt,
@@ -178,31 +173,38 @@ class ChatReadRetrieveReadApproach(Approach):
             user_question,
             self.QUERY_PROMPT_FEW_SHOTS,
             self.chatgpt_token_limit - len(user_question)
-            )
+        )
 
         try:
-            chat_completion= await self.client.chat.completions.create(
-                    model=self.chatgpt_deployment,
-                    messages=messages,
-                    temperature=0.0,
-                    # max_tokens=32, # setting it too low may cause malformed JSON
-                    max_tokens=100,
+            log.debug(f"Generate Chat Completion")
+            log.debug(f"Chat Completion Model: {self.chatgpt_deployment}")
+            log.debug(f"Chat Completion API Version: {openai.api_version}")
+            log.debug(f"Chat Completion API Base: {openai.api_base}")
+            chat_completion = await self.client.chat.completions.create(
+                model=self.chatgpt_deployment,
+                messages=messages,
+                temperature=0.0,
+                # max_tokens=32, # setting it too low may cause malformed JSON
+                max_tokens=100,
                 n=1)
-                # Initialize a list to collect filter reasons
+            # Initialize a list to collect filter reasons
             filter_reasons = []
 
             # Check for content filtering
             if chat_completion.choices[0].finish_reason == 'content_filter':
                 for category, details in chat_completion.choices[0].content_filter_results.items():
                     if details['filtered']:
-                        filter_reasons.append(f"{category} ({details['severity']})")
+                        filter_reasons.append(
+                            f"{category} ({details['severity']})")
 
             # Raise an error if any filters are triggered
             if filter_reasons:
-                error_message = "The generated content was filtered due to triggering Azure OpenAI's content filtering system. Reason(s): The response contains content flagged as " + ", ".join(filter_reasons)
+                error_message = "The generated content was filtered due to triggering Azure OpenAI's content filtering system. Reason(s): The response contains content flagged as " + ", ".join(
+                    filter_reasons)
                 raise ValueError(error_message)
         except BadRequestError as e:
-            log.error(f"Error generating optimized keyword search: {str(e.body['message'])}")
+            log.error(
+                f"Error generating optimized keyword search: {str(e.body['message'])}")
             yield json.dumps({"error": f"Error generating optimized keyword search: {str(e.body['message'])}"}) + "\n"
             return
         except Exception as e:
@@ -211,50 +213,22 @@ class ChatReadRetrieveReadApproach(Approach):
             return
 
         generated_query = chat_completion.choices[0].message.content
-        
-        #if we fail to generate a query, return the last user question
+
+        # if we fail to generate a query, return the last user question
         if generated_query.strip() == "0":
             generated_query = history[-1]["user"]
 
         thought_chain["work_search_term"] = generated_query
-        
-        # Generate embedding using REST API
-        url = f'{self.embedding_service_url}/models/{self.escaped_target_model}/embed'
-        data = [f'"{generated_query}"']
-        
-        headers = {
-                'Accept': 'application/json',  
-                'Content-Type': 'application/json',
-            }
 
-        embedded_query_vector = None
-        try:
-            response = requests.post(url, json=data,headers=headers,timeout=60)
-            if response.status_code == 200:
-                response_data = response.json()
-                embedded_query_vector =response_data.get('data')
-            else:
-                # Generate an error message if the embedding generation fails
-                log.error(f"Error generating embedding:: {response.status_code} - {response.text}")
-                yield json.dumps({"error": "Error generating embedding"}) + "\n"
-                return # Go no further
-        except Exception as e:
-            # Timeout or other error has occurred
-            log.error(f"Error generating embedding: {str(e)}")
-            yield json.dumps({"error": f"Error generating embedding: {str(e)}"}) + "\n"
-            return # Go no further
-        
-        #vector set up for pure vector search & Hybrid search & Hybrid semantic
-        vector = VectorizedQuery(vector=embedded_query_vector, k_nearest_neighbors=top, fields="contentVector")
-
-        #Create a filter for the search query
+        # Create a filter for the search query
         if (folder_filter != "") & (folder_filter != "All"):
             search_filter = f"search.in(folder, '{folder_filter}', ',')"
         else:
             search_filter = None
-        if tags_filter != "" :
+        if tags_filter != "":
             if search_filter is not None:
-                search_filter = search_filter + f" and tags/any(t: search.in(t, '{tags_filter}', ','))"
+                search_filter = search_filter + \
+                    f" and tags/any(t: search.in(t, '{tags_filter}', ','))"
             else:
                 search_filter = f"tags/any(t: search.in(t, '{tags_filter}', ','))"
 
@@ -263,7 +237,7 @@ class ChatReadRetrieveReadApproach(Approach):
 
         # Pure Vector Search
         # r=self.search_client.search(search_text=None,vector_queries =[vector], top=top)
-        
+
         # vector search with filter
         # r=self.search_client.search(search_text=None, vectors=[vector], filter="processed_datetime le 2023-09-18T04:06:29.675Z" , top=top)
         # r=self.search_client.search(search_text=None, vectors=[vector], filter="search.ismatch('upload/ospolicydocs/China, climate change and the energy transition.pdf', 'file_name')", top=top)
@@ -277,12 +251,11 @@ class ChatReadRetrieveReadApproach(Approach):
                 top=top,
                 query_caption="extractive|highlight-false"
                 if use_semantic_captions else None,
-                vector_queries =[vector],
                 filter=search_filter
             )
         else:
             r = self.search_client.search(
-                generated_query, top=top,vector_queries=[vector], filter=search_filter
+                generated_query, top=top, filter=search_filter
             )
 
         citation_lookup = {}  # dict of "FileX" moniker to the actual file name
@@ -297,16 +270,16 @@ class ChatReadRetrieveReadApproach(Approach):
         # # Only include results where search.score is greater than cutoff_score
         # filtered_results = [doc for doc in r if doc['@search.score'] > cutoff_score]
         # # print("Filtered Results: ", len(filtered_results))
-
+        log.debug(f"Search Results: {r}")
         for idx, doc in enumerate(r):  # for each document in the search results
             # include the "FileX" moniker in the prompt, and the actual file name in the response
             results.append(
                 f"File{idx} " + "| " + nonewlines(doc[self.content_field])
             )
             data_points.append(
-               "/".join(urllib.parse.unquote(doc[self.source_file_field]).split("/")[1:]
-                ) + "| " + nonewlines(doc[self.content_field])
-                )
+                "/".join(urllib.parse.unquote(doc[self.source_file_field]).split("/")[1:]
+                         ) + "| " + nonewlines(doc[self.content_field])
+            )
             # uncomment to debug size of each search result content_field
             # print(f"File{idx}: ", self.num_tokens_from_string(f"File{idx} " + /
             #  "| " + nonewlines(doc[self.content_field]), "cl100k_base"))
@@ -316,8 +289,8 @@ class ChatReadRetrieveReadApproach(Approach):
                 "citation": urllib.parse.unquote("https://" + self.blob_client.url.split("/")[2] + f"/{self.content_storage_container}/" + doc[self.chunk_file_field]),
                 "source_path": doc[self.source_file_field],
                 "page_number": str(doc[self.page_number_field][0]) or "0",
-             }
-            
+            }
+
         # create a single string of all the results to be used in the prompt
         results_text = "".join(results)
         if results_text == "":
@@ -367,10 +340,10 @@ class ChatReadRetrieveReadApproach(Approach):
                 userPersona=user_persona,
                 systemPersona=system_persona,
             )
-            
+
         try:
             # STEP 3: Generate a contextual and content-specific answer using the search results and chat history.
-            #Added conditional block to use different system messages for different models.
+            # Added conditional block to use different system messages for different models.
 
             messages = self.get_messages_from_history(
                 system_message,
@@ -378,29 +351,30 @@ class ChatReadRetrieveReadApproach(Approach):
                 self.model_name,
                 history,
                 # history[-1]["user"],
-                history[-1]["user"] + "Sources:\n" + content + "\n\n", # GPT 4 starts to degrade with long system messages. so moving sources here 
+                # GPT 4 starts to degrade with long system messages. so moving sources here
+                history[-1]["user"] + "Sources:\n" + content + "\n\n",
                 self.RESPONSE_PROMPT_FEW_SHOTS,
                 max_tokens=self.chatgpt_token_limit
             )
             # Generate the chat completion
-            chat_completion= await self.client.chat.completions.create(
+            chat_completion = await self.client.chat.completions.create(
                 model=self.chatgpt_deployment,
                 messages=messages,
                 temperature=float(overrides.get("response_temp")) or 0.6,
                 n=1,
                 stream=True
-            
+
             )
-            msg_to_display = '\n\n'.join([str(message) for message in messages])
-        
-        
+            msg_to_display = '\n\n'.join(
+                [str(message) for message in messages])
+
             # Return the data we know
             yield json.dumps({"data_points": data_points,
                               "thoughts": f"Searched for:<br>{generated_query}<br><br>Conversations:<br>" + msg_to_display.replace('\n', '<br>'),
                               "thought_chain": thought_chain,
                               "work_citation_lookup": citation_lookup,
                               "web_citation_lookup": {}}) + "\n"
-            
+
             # STEP 4: Format the response
             async for chunk in chat_completion:
                 # Check if there is at least one element and the first element has the key 'delta'
@@ -410,74 +384,24 @@ class ChatReadRetrieveReadApproach(Approach):
                     if chunk.choices[0].finish_reason == 'content_filter':
                         for category, details in chunk.choices[0].content_filter_results.items():
                             if details['filtered']:
-                                filter_reasons.append(f"{category} ({details['severity']})")
+                                filter_reasons.append(
+                                    f"{category} ({details['severity']})")
 
                     # Raise an error if any filters are triggered
                     if filter_reasons:
-                        error_message = "The generated content was filtered due to triggering Azure OpenAI's content filtering system. Reason(s): The response contains content flagged as " + ", ".join(filter_reasons)
+                        error_message = "The generated content was filtered due to triggering Azure OpenAI's content filtering system. Reason(s): The response contains content flagged as " + ", ".join(
+                            filter_reasons)
                         raise ValueError(error_message)
                     yield json.dumps({"content": chunk.choices[0].delta.content}) + "\n"
         except BadRequestError as e:
-            log.error(f"Error generating chat completion: {str(e.body['message'])}")
+            log.error(
+                f"Error generating chat completion: {str(e.body['message'])}")
             yield json.dumps({"error": f"Error generating chat completion: {str(e.body['message'])}"}) + "\n"
             return
         except Exception as e:
             log.error(f"Error generating chat completion: {str(e)}")
             yield json.dumps({"error": f"Error generating chat completion: {str(e)}"}) + "\n"
             return
-
-
-    def detect_language(self, text: str) -> str:
-        """ Function to detect the language of the text"""
-        try:
-            api_detect_endpoint = f"{self.azure_ai_endpoint}language/:analyze-text?api-version=2023-04-01"
-            headers = {
-                'Authorization': f'Bearer {self.azure_ai_token_provider()}',
-                'Content-type': 'application/json',
-                'Ocp-Apim-Subscription-Region': self.azure_ai_location
-            }
-
-            data = {
-                "kind": "LanguageDetection",
-                "analysisInput":{
-                    "documents":[
-                        {
-                            "id":"1",
-                            "text": text
-                        }
-                    ]
-                }
-            } 
-
-            response = requests.post(api_detect_endpoint, headers=headers, json=data)
-
-            if response.status_code == 200:
-                detected_language = response.json()["results"]["documents"][0]["detectedLanguage"]["iso6391Name"]
-                return detected_language
-            else:
-                raise Exception(f"Error detecting language: {response.status_code} - {response.text}")
-        except Exception as e:
-            raise Exception(f"An error occurred during language detection: {str(e)}") from e
-     
-    def translate_response(self, response: str, target_language: str) -> str:
-        """ Function to translate the response to target language"""
-        api_translate_endpoint = f"{self.azure_ai_endpoint}translator/text/v3.0/translate?api-version=3.0"
-        headers = {
-            'Authorization': f'Bearer {self.azure_ai_token_provider()}',
-            'Content-type': 'application/json',
-            'Ocp-Apim-Subscription-Region': self.azure_ai_location
-        }
-        params={'to': target_language }
-        data = [{
-            "text": response
-        }]          
-        response = requests.post(api_translate_endpoint, headers=headers, json=data, params=params)
-        
-        if response.status_code == 200:
-            translated_response = response.json()[0]['translations'][0]['text']
-            return translated_response
-        else:
-            raise Exception(f"Error translating response: {response.status_code}")
 
     def get_source_file_with_sas(self, source_file: str) -> str:
         """ Function to return the source file with a SAS token"""
@@ -488,7 +412,8 @@ class ChatReadRetrieveReadApproach(Approach):
             container_name = separator.join(
                 source_file.split(separator)[3:4])
             # Obtain the user delegation key
-            user_delegation_key = self.blob_client.get_user_delegation_key(key_start_time=datetime.utcnow(), key_expiry_time=datetime.utcnow() + timedelta(hours=2))
+            user_delegation_key = self.blob_client.get_user_delegation_key(
+                key_start_time=datetime.utcnow(), key_expiry_time=datetime.utcnow() + timedelta(hours=2))
 
             sas_token = generate_blob_sas(
                 account_name=self.blob_client.account_name,

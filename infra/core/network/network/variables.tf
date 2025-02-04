@@ -1,9 +1,9 @@
 variable "nsg_name" {
-  type    = string
+  type = string
 }
 
 variable "ddos_name" {
-  type    = string
+  type = string
 }
 
 variable "ddos_plan_id" {
@@ -11,83 +11,75 @@ variable "ddos_plan_id" {
 }
 
 variable "vnet_name" {
-  type    = string
+  type = string
 }
 
 variable "dns_resolver_name" {
-  type    = string
+  type = string
 }
 
 variable "location" {
-  type    = string
+  type = string
 }
 
 variable "resourceGroupName" {
-  type    = string
+  type = string
 }
 
 variable "tags" {
-  type    = map(string)
+  type = map(string)
 }
 
 variable "vnetIpAddressCIDR" {
-  type    = string
+  type = string
 }
 
 variable "snetAzureMonitorCIDR" {
-  type    = string
+  type = string
 }
 
 variable "snetStorageAccountCIDR" {
-  type    = string
+  type = string
 }
 
 variable "snetCosmosDbCIDR" {
-  type    = string
+  type = string
 }
 
 variable "snetAzureAiCIDR" {
-  type    = string
+  type = string
 }
 
 variable "snetKeyVaultCIDR" {
-  type    = string
+  type = string
 }
 
 variable "snetAppCIDR" {
-  type    = string
-}
-
-variable "snetEnrichmentCIDR" {
-  type    = string
+  type = string
 }
 
 variable "snetIntegrationCIDR" {
-  type    = string
+  type = string
 }
 
 variable "snetSearchServiceCIDR" {
-  type    = string
+  type = string
 }
 
 variable "snetBingServiceCIDR" {
-  type    = string
+  type = string
 }
 
 variable "snetAzureOpenAICIDR" {
-  type    = string
-}
-
-variable "snetFunctionCIDR" {
-  type    = string
+  type = string
 }
 
 variable "snetACRCIDR" {
-  type    = string
+  type = string
 }
 
 variable "snetDnsCIDR" {
-  type    = string
+  type = string
 }
 
 variable "arm_template_schema_mgmt_api" {
@@ -95,7 +87,7 @@ variable "arm_template_schema_mgmt_api" {
 }
 
 variable "azure_environment" {
-  type        = string
+  type = string
 }
 
 variable "enabledDDOSProtectionPlan" {

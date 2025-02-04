@@ -1,5 +1,5 @@
 output "nsg_name" {
-  value = azurerm_network_security_group.nsg.name  
+  value = azurerm_network_security_group.nsg.name
 }
 
 output "nsg_id" {
@@ -18,14 +18,6 @@ output "snetAmpls_name" {
   value = data.azurerm_subnet.ampls.name
 }
 
-output "snetStorage_name" {
-  value = data.azurerm_subnet.storageAccount.name
-}
-
-output "snetCosmosDb_name" {
-  value = data.azurerm_subnet.cosmosDb.name
-}
-
 output "snetAzureAi_id" {
   value = data.azurerm_subnet.azureAi.id
 }
@@ -36,7 +28,7 @@ output "snetAzureAi_name" {
 
 output "snetKeyVault_id" {
   description = "The ID of the subnet dedicated for the Key Vault"
-  value = data.azurerm_subnet.keyVault.id
+  value       = data.azurerm_subnet.keyVault.id
 }
 
 output "snetKeyVault_name" {
@@ -55,28 +47,12 @@ output "snetApp_name" {
   value = data.azurerm_subnet.app.name
 }
 
-output "snetFunction_id" {
-  value = data.azurerm_subnet.function.id
-}
-
-output "snetFunction_name" {
-  value = data.azurerm_subnet.function.name
-}
-
-output "snetEnrichment_name" {
-  value = data.azurerm_subnet.enrichment.name
-}
-
 output "snetIntegration_id" {
   value = data.azurerm_subnet.integration.id
 }
 
 output "snetIntegration_name" {
   value = data.azurerm_subnet.integration.name
-}
-
-output "snetSearch_name" {
-  value = data.azurerm_subnet.aiSearch.name
 }
 
 output "snetAzureOpenAI_id" {
