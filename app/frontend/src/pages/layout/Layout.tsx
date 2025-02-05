@@ -42,32 +42,27 @@ export const Layout = () => {
                                     Chat
                                 </NavLink>
                             </li>
-                            <li className={styles.headerNavLeftMargin}>
-                                <NavLink to="/content" className={({ isActive }) => (isActive ? styles.headerNavPageLinkActive : styles.headerNavPageLink)}>
-                                    Manage Content
-                                </NavLink>
-                            </li>
                             {featureFlags?.ENABLE_MATH_ASSISTANT &&
                                 <li className={styles.headerNavLeftMargin}>
                                     <NavLink to="/tutor" className={({ isActive }) => (isActive ? styles.headerNavPageLinkActive : styles.headerNavPageLink)}>
-                                    Math Assistant
-                                    <br />  
-                                    <p className={styles.centered}>(preview)</p>
+                                        Math Assistant
+                                        <br />
+                                        <p className={styles.centered}>(preview)</p>
                                     </NavLink>
                                 </li>
                             }
                             {featureFlags?.ENABLE_TABULAR_DATA_ASSISTANT &&
                                 <li className={styles.headerNavLeftMargin}>
                                     <NavLink to="/tda" className={({ isActive }) => (isActive ? styles.headerNavPageLinkActive : styles.headerNavPageLink)}>
-                                    Tabular Data Assistant
-                                    <br />  
-                                    <p className={styles.centered}>(preview)</p>
+                                        Tabular Data Assistant
+                                        <br />
+                                        <p className={styles.centered}>(preview)</p>
                                     </NavLink>
-                                    
-                                      
+
+
                                 </li>
                             }
-                    </ul>
+                        </ul>
                     </nav>
                 </div>
             </header>
