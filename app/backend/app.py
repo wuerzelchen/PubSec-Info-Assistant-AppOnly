@@ -411,8 +411,8 @@ async def get_citation(request: Request):
         json_body = await request.json()
         citation = urllib.parse.unquote(json_body.get("citation"))
         blob = blob_container.get_blob_client(citation).download_blob()
-        decoded_text = blob.readall().decode()
-        results = json.loads(decoded_text)
+        decoded_text = blob.readall().decode('utf-8', errors='ignore')
+        results = decoded_text
     except Exception as ex:
         log.exception("Exception in /getcitation")
         raise HTTPException(status_code=500, detail=str(ex)) from ex
@@ -459,8 +459,10 @@ async def get_file(request: Request):
     file_path = data['path']
 
     # Extract container name and blob name from the file path
-    container_name, blob_name = file_path.split('/', 1)
-
+    container_name = file_path.split("/")[3]
+    blob_name = urllib.parse.unquote("/".join(file_path.split("/")[4:]))
+    log.debug("Container Name: %s", container_name)
+    log.debug("Blob Name: %s", blob_name)
     # Download the blob to a local file
 
     citation_blob_client = blob_container.get_blob_client(blob=blob_name)

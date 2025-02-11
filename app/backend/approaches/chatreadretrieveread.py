@@ -285,10 +285,16 @@ class ChatReadRetrieveReadApproach(Approach):
             #  "| " + nonewlines(doc[self.content_field]), "cl100k_base"))
 
             # add the "FileX" moniker and full file name to the citation lookup
+            log.debug(f"{self.content_storage_container}")
+            log.debug(f"{self.source_file_field}")
+            log.debug(f"{self.chunk_file_field}")
+            citation_url = urllib.parse.unquote("https://" + self.blob_client.url.split("/")[2] + f"/{self.content_storage_container}/" + "/".join(doc[self.chunk_file_field].split("/")[4:]))
+            log.debug(f"Citation URL: {citation_url}")
             citation_lookup[f"File{idx}"] = {
-                "citation": urllib.parse.unquote("https://" + self.blob_client.url.split("/")[2] + f"/{self.content_storage_container}/" + doc[self.chunk_file_field]),
+                "citation": citation_url,
                 "source_path": doc[self.source_file_field],
-                "page_number": str(doc[self.page_number_field][0]) or "0",
+                "page_number": "0",
+                #"page_number": str(doc[self.page_number_field][0]) or "0",
             }
 
         # create a single string of all the results to be used in the prompt
